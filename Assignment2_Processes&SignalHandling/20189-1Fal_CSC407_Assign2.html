@@ -1,0 +1,869 @@
+<!doctype html>
+<html lang="en_US">
+
+ <head>
+  <meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+  <title>CSC 407: Computer Systems II: 2018 Fall, Assignment #2</title>
+ </head>
+
+ <body>
+  <center>
+  <h2>CSC 407: Computer Systems II: 2018 Fall, Assignment #2</h2>
+  <p>Last Modified 2018 September 26</p>
+  </center>
+
+  <h4>Purpose:</h4>
+   To practice creating processes and signal handling.
+
+  <h4>Computing</h4>
+  <p>
+  Please <a href="">ssh</a> into one of the following:
+    <ul>
+      <li>140.192.36.184</li>
+      <li>140.192.36.185</li>
+      <li>140.192.36.186</li>
+      <li>140.192.36.187</li>
+    </ul>
+  or use your own Linux machine.
+  </p>
+
+  <h4>Overview:</h4>
+  <p>
+    A  <em>student</em> approaches the <em>Dean</em> of the College
+    to take a science class.
+    The Dean assigns a <em>prof</em>,
+    who is smart and capable, but is also very tired.
+    If the professor falls asleep while giving the lecture
+    then the student will wait for
+    <code>NUM_SNORES_BEFORE_STUDENT_COMPLAINS</code>
+    snores before waking the professor.
+    On the <code>NUM_COMPLAINTS_TO_PROF_BEFORE_COMPLAIN_TO_DEAN</code>-th
+    attempt the student bypasses the prof and goes straight to the dean,
+    who also yells at the prof.
+  </p>
+
+  <h4>Assignment:</h4>
+   <ol type="1">
+   <li>
+     <h5>Copy and paste the following 3 files:</h5>
+<pre>
+/*-------------------------------------------------------------------------*
+ *---									---*
+ *---		sleepyProfHeaders.h					---*
+ *---									---*
+ *---	----	----	----	----	----	----	----	----	---*
+ *---									---*
+*---	Version 1a					Joseph Phillips	---*
+ *---									---*
+ *-------------------------------------------------------------------------*/
+
+#include	&lt;stdlib.h&gt;
+#include	&lt;stdio.h&gt;
+#include	&lt;string.h&gt;
+#include	&lt;signal.h&gt;
+#include	&lt;unistd.h&gt;
+#include	&lt;sys/types.h&gt;
+#include	&lt;sys/wait.h&gt;
+
+
+//  PURPOSE:  To tell the length string arrays.
+#define		MAX_LINE				64
+
+//  PURPOSE:  To tell the name of the professor.
+#define		PROFS_NAME				&quot;Prof Narcolepsy&quot;
+
+//  PURPOSE:  To tell the name of the program the professor process should run.
+#define		PROF_PROGRAM				&quot;prof&quot;
+
+//  PURPOSE:  To tell the name of the program the student process should run.
+#define		STUDENT_PROGRAM				&quot;student&quot;
+
+
+//  PURPOSE:  To help determine how long a class period is.
+#define		NUM_MOMENTS_IN_CLASS			90
+
+
+//  PURPOSE:  To help determine how long a class period is.
+#define		SECONDS_PER_MOMENT			1
+
+//  PURPOSE:  To tell the probability that the professor will fall asleep in a
+//	moment.
+#define		PROF_FALL_ASLEEP_PROB			0.125
+
+
+//  PURPOSE:  To tell the number of sleeping moments that must occur before the
+//	student complains.
+#define		NUM_SNORES_BEFORE_STUDENT_COMPLAINS	3
+
+
+//  PURPOSE:  To tell the number of complaints to the professor that must occur
+//	before the student complains to the dean.
+#define		NUM_COMPLAINTS_TO_PROF_BEFORE_COMPLAIN_TO_DEAN	\
+							3
+
+//  PURPOSE:  What the professor sends to the student to teach him or her.
+#define		PROF_TEACH_SIGNAL			SIGUSR1
+
+
+//  PURPOSE:  What the professor sends to the student to say that he or she is
+//	sleeping.
+#define		PROF_SNORE_SIGNAL			SIGUSR2
+
+
+//  PURPOSE:  What the student sends to the professor and dean to complain about
+//	the sleeping prof.
+#define		COMPLAIN_SIGNAL				SIGUSR1
+
+
+//  PURPOSE:  What the dean sends to the professor, and the professor to the
+//	student, to say the class is over.
+#define		CLASS_DISMISSED_SIGNAL			SIGINT
+
+
+//  PURPOSE:  To distinguish among the academic topics the professor can teach.
+typedef		enum
+		{
+		  NO_SUBJECT,
+		  PHYSICS_SUBJECT,
+		  CHEMISTRY_SUBJECT,
+		  BIOLOGY_SUBJECT,
+
+		  MIN_SUBJECT	= PHYSICS_SUBJECT,
+		  MAX_SUBJECT	= BIOLOGY_SUBJECT,
+
+		  NUM_SUBJECTS
+		}
+		subject_ty;
+
+
+//  PURPOSE:  To hold the names of the academic subjects references by
+//	'subject_ty'.
+extern
+const char*	subjectName[NUM_SUBJECTS];
+
+
+//  PURPOSE:  To return the corresponding 'subject_ty' value of the subject
+//	named 'subjectNameCPtr', or to return 'NO_SUBJECT' if no match is found.
+extern
+subject_ty	getSubjectFromName	(const char*	subjectNameCPtr
+					);
+
+
+/*-------------------------------------------------------------------------*
+ *---									---*
+ *---		dean.c							---*
+ *---									---*
+ *---	----	----	----	----	----	----	----	----	---*
+ *---									---*
+ *---	Version 1a					Joseph Phillips	---*
+ *---									---*
+ *-------------------------------------------------------------------------*/
+
+#include	&quot;sleepyProfHeaders.h&quot;
+
+//  PURPOSE:  To hold the process id of the professor (child) process.
+pid_t		profPid;
+
+//  PURPOSE:  To hold '1' while the professor process is running.
+int		isProfRunning	= 0;
+
+
+//  PURPOSE:  To ask the user which subject they want to study, and to return
+//	the corresponding 'subject_ty' value.  No parameters.
+subject_ty	getSubject	()
+{
+  int	i;
+  int	subject;
+  char	text[MAX_LINE];
+
+  printf(&quot;Dean \&quot;Welcome to the Bubu University!\&quot;\n&quot;);
+
+  do
+  {
+    printf(&quot;Dean \&quot;What would you like to study?\&quot;\n&quot;);
+
+    for  (i = (int)MIN_SUBJECT;  i &lt;= (int)MAX_SUBJECT;  i++)
+    {
+      printf(&quot;  %d: %s\n&quot;,i,subjectName[i]);
+    }
+
+    fgets(text,MAX_LINE,stdin);
+    subject = strtol(text,NULL,0);
+  }
+  while  ( (subject &lt; MIN_SUBJECT) || (subject &gt; MAX_SUBJECT) );
+
+  return((subject_ty)subject);
+}
+
+
+//  PURPOSE:  To tell the professor to wake up.  Ignores 'sigNum'.  No return
+//	value.
+void		complainSigHandler
+				(int	sigNum
+				)
+{
+  printf(&quot;Dean \&quot;WAKE UP!\&quot;\n&quot;);
+  kill(profPid,COMPLAIN_SIGNAL);
+}
+
+
+//  PURPOSE:  To handle when the professor process finishes.  Ignores 'sigNum'.
+//	No return value.
+void		sigChildHandler	(int	sigNum
+				)
+{
+  int	status;
+
+  wait(&amp;status);
+
+  if  ( WIFEXITED(status) &amp;&amp; (WEXITSTATUS(status) == EXIT_SUCCESS) )
+  {
+    printf(&quot;(The Dean turns of the lights and locks the classroom.)\n&quot;);
+  }
+  else
+  {
+    printf(&quot;Dean \&quot;Whoops!  I will look into that.\&quot;\n&quot;);
+  }
+
+  isProfRunning	= 0;
+}
+
+
+//  PURPOSE:  To install 'complainSigHandler()' as the signal handler to handle
+//	'COMPLAIN_SIGNAL' coming to the dean.  No parameters.  No return value.
+void		installSignalHandlers
+				()
+{
+  struct sigaction	act;
+
+  memset(&amp;act,'\0',sizeof(act));
+  act.sa_handler	= complainSigHandler;
+  sigaction(COMPLAIN_SIGNAL,&amp;act,NULL);
+
+  act.sa_handler	= sigChildHandler;
+  sigaction(SIGCHLD,&amp;act,NULL);
+}
+
+
+//  PURPOSE:  To start the professor process (and initialize 'profPid'), and
+//	to have the professor process teach 'subject'
+void		startProf	(subject_ty	subject
+				)
+{
+  char	text[MAX_LINE];
+
+  printf(&quot;Dean: \&quot;%s, today you will teach %s\&quot;\n&quot;,
+  	 PROFS_NAME,subjectName[subject]
+	);
+
+  isProfRunning	= 1;
+  profPid	= fork();
+
+  if  (profPid == 0)
+  {
+    execl(PROF_PROGRAM,PROF_PROGRAM,subjectName[subject],NULL);
+    printf(&quot;Prof \&quot;I cannot find my classroom!  I quit!\&quot;\n&quot;);
+    exit(EXIT_FAILURE);
+  }
+  
+}
+
+
+//  PURPOSE:  To wait for either the class to be over (more specifically, for
+//	'NUM_MOMENTS_IN_CLASS' * 'SECONDS_PER_MOMENT' seconds to elapse), or
+//	to be notified that the professor process no longer runs.  No
+//	parameters.  No return value.
+void		waitUntilClassPeriodIsOver
+				()
+{
+  int	momentNum;
+
+  for  ( momentNum = 0;  momentNum &lt; NUM_MOMENTS_IN_CLASS;  momentNum++ )
+  {
+    sleep(SECONDS_PER_MOMENT);
+
+    if  (!isProfRunning)
+    {
+      break;
+    }
+
+    if  ( (momentNum % 5) == 0 )
+    {
+      printf(&quot;(The Dean shuffles paper.)\n&quot;);
+    }
+  }
+
+}
+
+
+//  PURPOSE:  To inform the professor process that class is over, and to wait
+//	to be notified by the OS that it has finished.  No parameters.  No
+//	return value.
+void		informProfClassIsOver	()
+{
+  printf(&quot;Dean \&quot;Class is over!\&quot;\n&quot;);
+  kill(profPid,CLASS_DISMISSED_SIGNAL);
+
+  while  (isProfRunning)
+    sleep(1);
+}
+
+
+//  PURPOSE:  To run the program.  Ignores command line arguments.  Returns
+//	'EXIT_SUCCESS' to OS.
+int		main		()
+{
+  int	subject	= getSubject();
+
+  installSignalHandlers();
+  startProf(subject);
+  waitUntilClassPeriodIsOver();
+
+  if  (isProfRunning)
+  {
+    informProfClassIsOver();
+  }
+
+  return(EXIT_SUCCESS);
+}
+
+
+/*-------------------------------------------------------------------------*
+ *---									---*
+ *---		subjectName.c						---*
+ *---									---*
+ *---	----	----	----	----	----	----	----	----	---*
+ *---									---*
+ *---	Version 1a					Joseph Phillips	---*
+ *---									---*
+ *-------------------------------------------------------------------------*/
+
+#include	&quot;sleepyProfHeaders.h&quot;
+
+
+//  PURPOSE:  To hold the names of the academic subjects references by
+//	'subject_ty'.
+const char*	subjectName[NUM_SUBJECTS]		=
+      		{
+		  &quot;&quot;,
+		  &quot;Physics&quot;,
+		  &quot;Chemistry&quot;,
+		  &quot;Biology&quot;
+		};
+
+
+//  PURPOSE:  To return the corresponding 'subject_ty' value of the subject
+//	named 'subjectNameCPtr', or to return 'NO_SUBJECT' if no match is found.
+subject_ty	getSubjectFromName	(const char*	subjectNameCPtr
+					)
+{
+  int i;
+
+  for  (i = (int)MIN_SUBJECT;  i &lt;= (int)MAX_SUBJECT;  i++)
+  {
+    if  (strcmp(subjectNameCPtr,subjectName[i]) == 0)
+    {
+      return((subject_ty)i);
+    }
+  }
+
+  return(NO_SUBJECT);
+}
+</pre>
+   </li>
+   <p/>
+
+   <li>
+     <h5>Copy, paste, and finish <code>prof.c</code>:</h5>
+     <pre>
+/*-------------------------------------------------------------------------*
+ *---									---*
+ *---		prof.c							---*
+ *---									---*
+ *---	----	----	----	----	----	----	----	----	---*
+ *---									---*
+ *---	Version 1a					Joseph Phillips	---*
+ *---									---*
+ *-------------------------------------------------------------------------*/
+
+#include	&quot;sleepyProfHeaders.h&quot;
+
+
+//  PURPOSE:  To hold '1' while class still is in session, or '0' after class
+//	is over.
+int		isStillClassTime	= 1;
+
+
+//  PURPOSE:  To hold '2' when the prof is quite awake, '1' when the prof is
+//	about to fall asleep, or '0' when the prof is asleep.
+int		awakeLevel		= 2;
+
+
+//  PURPOSE:  To hold the process id number of the student (child) process.
+pid_t		studentPid;
+
+
+//  PURPOSE:  To tell how many facts are known for each subject.
+#define		NUM_FACTS_PER_SUBJECT	4
+
+
+//  PURPOSE:  To tell the physics facts.
+const char*	PHYSICS_KNOWLEDGE[NUM_FACTS_PER_SUBJECT]	=
+		{ &quot;F = m*a is a special case of F = dp/dt = m*dv/dt + v*dm/dt&quot;
+		  &quot; when dm/dt = 0.&quot;,
+
+		  &quot;Fermions have 1/2 spin and cannot occupy the same quantum&quot;
+		  &quot; state, Bosons have integer spin and can occupy the same&quot;
+		  &quot; quantum state.&quot;,
+
+		  &quot;The electron-electron repulsion between atoms and molecules&quot;
+		  &quot; supports the structure of most matter at our scale. If &quot;
+		  &quot;gravity overcomes this electron repulsion, then electrons &quot;
+		  &quot;collapse into the nucleus and matter becomes a neutron &quot;
+		  &quot;star.&quot;,
+
+		  &quot;There is a large Black hole at the center of our galaxy.&quot;
+		};
+
+//  PURPOSE:  To tell the chemistry facts.
+const char*	CHEMISTRY_KNOWLEDGE[NUM_FACTS_PER_SUBJECT]	=
+		{&quot;In SN2 reactions, the nucleophile puts electron density into&quot;
+		 &quot; the anti-bonding orbital of leaving group, thus weakening&quot;
+		 &quot; the bond between the leaving group and the substrate.&quot;,
+
+		 &quot;The transition state of a reaction is the configuration of &quot;
+		 &quot;highest energy.&quot;,
+
+		 &quot;The energy difference between the reactants and the &quot;
+		 &quot;transition state determines the rate of reaction&quot;,
+
+		 &quot;The Diels-Alder reaction is a popular way to make cyclic &quot;
+		 &quot;compounds with atoms other than carbon.&quot;
+		};
+
+
+//  PURPOSE:  To tell the biology facts.
+const char*	BIOLOGY_KNOWLEDGE[NUM_FACTS_PER_SUBJECT]	=
+		{&quot;Allopatric speciation happens when some geological barrier &quot;
+		 &quot;forms in the range of a species.  The barrier prevents &quot;
+		 &quot;genetic interchange and the previous single species can turn&quot;
+		 &quot; into two or more by genetic drift and different selective&quot;
+		 &quot; pressures.&quot;,
+
+		 &quot;A classic case of Allopatric speciation is with chimpanzees&quot;
+		 &quot; north of the Congo river and Bonobos south of it.&quot;,
+
+		 &quot;The Hox genes control body plan of an embryo from head to &quot;
+		 &quot;tail in creatures as diverse from earthworms to fruit flies &quot;
+		 &quot;to humans.  That implies we all had a common ancestor &quot;
+		 &quot;hundreds of millions of years ago.&quot;,
+
+		 &quot;The Krebs cycle is very important because it is how all &quot;
+		 &quot;known aerobic organisms turn carbohydrates, fats and protein&quot;
+		 &quot; into energy.&quot;
+		};
+
+
+//  PURPOSE:  To make the professor wake up after receiving the COMPLAIN_SIGNAL.
+//	If the signal comes from the dean then sets 'awakeLevel = 2' and
+//	prints:
+//		&quot;Prof \&quot;(Oops! The Dean caught me sleeping on the job!)\&quot;\n&quot;
+//		&quot;Prof \&quot;Now as I was saying . . .\&quot;\n&quot;
+//
+// 	If the signal *merely* comes from the student then sets 'awakeLevel = 1'
+//	and prints:
+//		&quot;Prof \&quot;Huh?  What?  Oops!  I must have fallen asleep!\&quot;\n&quot;
+//		&quot;Prof \&quot;Now as I was saying . . .\&quot;\n&quot;.
+void		wakeUpHandler		(int		sigNum,
+					 siginfo_t*	infoPtr,
+					 void*		vPtr
+					)
+{
+  <strong>// YOUR CODE HERE</strong>
+}
+
+
+//  PURPOSE:  To make this process stop by setting 'isStillClassTime = 0',
+//	and to tell the student process to stop by sending it
+//	CLASS_DISMISSED_SIGNAL.  Also prints:
+//		&quot;Prof \&quot;Class dismissed!\&quot;\n&quot;
+void		classDismissedHandler
+				(int		sigNum
+				)
+{
+  <strong>// YOUR CODE HERE</strong>
+}
+
+
+//  PURPOSE:  To install 'wakeUpHandler()' for 'COMPLAIN_SIGNAL' and
+//	'classDismissedHandler()' for 'CLASS_DISMISSED_SIGNAL'.
+void		installHandlers	()
+{
+  <strong>// YOUR CODE HERE</strong>
+}
+
+
+//  PURPOSE:  To print the lesson, and to send 'PROF_TEACH_SIGNAL' to the
+//	student.
+void		teach		(pid_t		studentPid,
+				 subject_ty	subject
+				)
+{
+  const char**	cPtrPtr;
+
+  switch  (subject)
+  {
+  case PHYSICS_SUBJECT :
+    cPtrPtr	= PHYSICS_KNOWLEDGE;
+    break;
+
+  case CHEMISTRY_SUBJECT :
+    cPtrPtr	= CHEMISTRY_KNOWLEDGE;
+    break;
+
+  case BIOLOGY_SUBJECT :
+    cPtrPtr	= BIOLOGY_KNOWLEDGE;
+    break;  
+  }
+
+  printf(&quot;Prof \&quot;%s\&quot;\n&quot;,cPtrPtr[rand() % NUM_FACTS_PER_SUBJECT]);
+  <strong>// YOUR CODE HERE</strong>
+}
+
+
+//  PURPOSE:  To send the 'PROF_SNORE_SIGNAL' to the student.
+void		snore		(pid_t		studentPid
+				)
+{
+  <strong>// YOUR CODE HERE</strong>
+}
+
+
+//  PURPOSE:  To start the student (child) process.  The child runs
+//	'STUDENT_PROGRAM' with the command line argument 'text' (telling the
+//	 process id of the dean).  It prints
+//	 	 &quot;Student \&quot;I cannot find my classroom!\&quot;\n&quot;
+//	and does:
+//		exit(EXIT_FAILURE);
+//	The parent process returns the process id of the student child process.
+pid_t		obtainStudent	()
+{
+  char	text[MAX_LINE];
+  pid_t	childPid;
+
+  snprintf(text,MAX_LINE,&quot;%d&quot;,getppid());
+
+  <strong>// YOUR CODE HERE</strong>
+
+  return(childPid);
+}
+
+
+//  PURPOSE:  To do the work of the professor.  Returns 'EXIT_SUCCESS'.
+int		main		(int		argc,
+				 char*		argv[]
+				)
+{
+  subject_ty		subject;
+  struct sigaction	act;
+
+  srand(getpid());
+  installHandlers();
+
+  if  ( (argc &lt; 2)					||
+	( (subject = getSubjectFromName(argv[1])) == NO_SUBJECT)
+      )
+  {
+    printf(&quot;Prof \&quot;I don't know which course I'm teaching, I quit!\&quot;\n&quot;);
+    exit(EXIT_FAILURE);
+  }
+
+  studentPid	= obtainStudent();
+
+  while  (isStillClassTime)
+  {
+    if  (awakeLevel &gt; 0)
+    {
+      teach(studentPid,subject);
+
+      if  ( ((rand() % 1024) / 1024.0) &lt; PROF_FALL_ASLEEP_PROB )
+      {
+        awakeLevel--;
+      }
+
+    }
+    else
+    {
+      snore(studentPid);
+    }
+
+    sleep(1);
+  }
+
+  return(EXIT_SUCCESS);
+}     </pre>
+   </li>
+   <p/>
+
+   <li>
+    <h5>Write <code>student.c</code></h5>
+    <p>
+     <code>student.c</code> will have one command line argument:
+     the process id of the dean.
+     If this is missing then it should print:
+     <pre>&quot;Student \&quot;Hey!  You did not tell me the Dean's number so I can complain if I need to\&quot;\n&quot;</pre>
+     and then do <code>exit(EXIT_FAILURE);</code>
+    </p>
+
+    <p>
+     The student should have 3 handlers:
+     <ol type="a">
+       <li>
+	 A <code>CLASS_DISMISSED_SIGNAL</code> handler.
+	 It ends the <code>sleep()</code> loop in <code>main()</code>.
+	 It should also display a message saying the student will quit:
+	 <pre>
+printf(&quot;Student \&quot;Time for lunch!\&quot;\n&quot;);
+	 </pre>
+       </li>
+       <li>
+	 A <code>PROF_TEACH_SIGNAL</code> handler.
+	 It just prints the following:
+	 <pre>
+printf(&quot;(Student scribbles notes.)\n&quot;);
+	 </pre>
+       </li>
+       <li>
+	 A <code>PROF_SNORE_SIGNAL</code> handler.
+	 <p>
+	   This handler should keep track of two things:
+	   <ol type="1">
+	     <li>The number of times the student was recently snored at</li>
+	     <li>The number of times the student recently complained to the prof</li>
+	   </ol>
+	   Every time it is called it should increment the number of times the student was recently snored at.
+	   <ol>
+	     <li>
+	       If this is less than
+	       <code>NUM_SNORES_BEFORE_STUDENT_COMPLAINS</code>
+	       then it should just print:
+	       <pre>
+printf(&quot;Student \&quot;%s?\&quot;\n&quot;,PROFS_NAME);
+	       </pre>
+	     </li>
+	     <li>
+	       Else, it should
+	       <ol type="a">
+		 <li>
+		   Reset the number of times the student was
+		   recently snored at to <code>0</code>
+		 </li>
+		 <li>
+		   Increment the number of times the
+		   student recently complained to the prof.
+		 </li>
+		 <li>
+		   If that count is less than
+		   <code>NUM_COMPLAINTS_TO_PROF_BEFORE_COMPLAIN_TO_DEAN</code>
+		   then it should send <code>COMPLAIN_SIGNAL</code> to the
+		   prof process (its parent) and print
+		   <pre>
+printf(&quot;Student \&quot;%s!\&quot;\n&quot;,PROFS_NAME);
+		   </pre>
+		 </li>
+		 <li>
+		   If the count is greater than or equal to
+		   <code>NUM_COMPLAINTS_TO_PROF_BEFORE_COMPLAIN_TO_DEAN</code>
+		   then it should send <code>COMPLAIN_SIGNAL</code> to the
+		   dean process, set the count to <code>0</code> and print
+		   <pre>
+printf(&quot;Student \&quot;I have had enough!  I'm calling the Dean.\&quot;\n&quot;);
+		   </pre>
+		 </li>
+	       </ol>
+	     </li>
+	   </ol>
+	 </p>
+       </li>
+     </ol>
+    </p>
+
+    <p>
+      After installing the handlers,
+      <code>main()</code> should just do a <code>sleep()</code> loop
+      waiting for the program to end.
+      I had:
+      <pre>
+  while  (isStillClassTime)
+  {
+    sleep(1);
+  }
+
+  return(EXIT_SUCCESS);
+      </pre>
+    </p>
+   </li>
+   <p/>
+
+   </ol>
+
+   <p>
+     <h4>How to make the program:</h4>
+     <pre>
+$ <strong>gcc -c subjectName.c</strong>
+$ <strong>gcc -c dean.c</strong>
+$ <strong>gcc -c prof.c</strong>
+$ <strong>gcc -o dean dean.o subjectName.o</strong>
+$ <strong>gcc -o prof prof.o subjectName.o</strong>
+$ <strong>gcc -c student.c</strong>
+$ <strong>gcc -o student student.o</strong>
+     </pre>
+     <h4>Then run it with the following:</h4>
+     <pre>
+$ <strong>./dean</strong>
+     </pre>
+     The <code>dean</code> starts the <code>prof</code>.
+     The <code>prof</code> starts the <code>student</code>.
+   </p>
+
+   <p>
+     <h4>Sample output:</h4>
+     <pre>
+$ <strong>./dean </strong>
+Dean &quot;Welcome to the Bubu University!&quot;
+Dean &quot;What would you like to study?&quot;
+  1: Physics
+  2: Chemistry
+  3: Biology
+<strong>1</strong>
+Dean: &quot;Prof Narcolepsy, today you will teach Physics&quot;
+Prof &quot;F = m*a is a special case of F = dp/dt = m*dv/dt + v*dm/dt when dm/dt = 0.
+&quot;
+Prof &quot;(Oops! The Dean caught me sleeping on the job!)&quot;
+Prof &quot;Now as I was saying . . .&quot;
+(The Dean shuffles paper.)
+Prof &quot;F = m*a is a special case of F = dp/dt = m*dv/dt + v*dm/dt when dm/dt = 0.
+&quot;
+(Student scribbles notes.)
+Prof &quot;There is a large Black hole at the center of our galaxy.&quot;
+(Student scribbles notes.)
+Prof &quot;There is a large Black hole at the center of our galaxy.&quot;
+(Student scribbles notes.)
+Prof &quot;Fermions have 1/2 spin and cannot occupy the same quantum state, Bosons ha
+ve integer spin and can occupy the same quantum state.&quot;
+(Student scribbles notes.)
+Prof &quot;The electron-electron repulsion between atoms and molecules supports the s
+tructure of most matter at our scale. If gravity overcomes this electron repulsi
+on, then electrons collapse into the nucleus and matter becomes a neutron star.&quot;
+(Student scribbles notes.)
+(The Dean shuffles paper.)
+Prof &quot;The electron-electron repulsion between atoms and molecules supports the s
+tructure of most matter at our scale. If gravity overcomes this electron repulsi
+on, then electrons collapse into the nucleus and matter becomes a neutron star.&quot;
+(Student scribbles notes.)
+Prof &quot;There is a large Black hole at the center of our galaxy.&quot;
+(Student scribbles notes.)
+Prof &quot;Fermions have 1/2 spin and cannot occupy the same quantum state, Bosons ha
+ve integer spin and can occupy the same quantum state.&quot;
+(Student scribbles notes.)
+Prof &quot;F = m*a is a special case of F = dp/dt = m*dv/dt + v*dm/dt when dm/dt = 0.
+&quot;
+(Student scribbles notes.)
+Prof &quot;The electron-electron repulsion between atoms and molecules supports the s
+tructure of most matter at our scale. If gravity overcomes this electron repulsi
+on, then electrons collapse into the nucleus and matter becomes a neutron star.&quot;
+(Student scribbles notes.)
+(The Dean shuffles paper.)
+Prof (&quot;Snore!&quot;)
+Student &quot;Prof Narcolepsy?&quot; <strong>(1st time snoring, no signal yet)</strong>
+Prof (&quot;Snore!&quot;)
+Student &quot;Prof Narcolepsy?&quot; <strong>(2nd time snoring, no signal yet)</strong>
+Prof (&quot;Snore!&quot;)
+Student &quot;Prof Narcolepsy!&quot; <strong>(3rd time snoring, now we send signal)</strong>
+                           <strong>(1st time we had to wake the prof)</strong>
+Prof &quot;Huh?  What?  Oops!  I must have fallen asleep!&quot;
+Prof &quot;Now as I was saying . . .&quot;
+Prof &quot;F = m*a is a special case of F = dp/dt = m*dv/dt + v*dm/dt when dm/dt = 0.
+&quot;
+(Student scribbles notes.)
+Prof &quot;There is a large Black hole at the center of our galaxy.&quot;
+(Student scribbles notes.)
+Prof &quot;F = m*a is a special case of F = dp/dt = m*dv/dt + v*dm/dt when dm/dt = 0.
+&quot;
+(Student scribbles notes.)
+(The Dean shuffles paper.)
+Prof &quot;The electron-electron repulsion between atoms and molecules supports the s
+tructure of most matter at our scale. If gravity overcomes this electron repulsi
+on, then electrons collapse into the nucleus and matter becomes a neutron star.&quot;
+(Student scribbles notes.)
+Prof &quot;The electron-electron repulsion between atoms and molecules supports the s
+tructure of most matter at our scale. If gravity overcomes this electron repulsi
+on, then electrons collapse into the nucleus and matter becomes a neutron star.&quot;
+(Student scribbles notes.)
+Prof &quot;There is a large Black hole at the center of our galaxy.&quot;
+(Student scribbles notes.)
+Prof &quot;F = m*a is a special case of F = dp/dt = m*dv/dt + v*dm/dt when dm/dt = 0.
+&quot;
+(Student scribbles notes.)
+Prof (&quot;Snore!&quot;)
+Student &quot;Prof Narcolepsy?&quot;
+(The Dean shuffles paper.)
+Prof (&quot;Snore!&quot;)
+Student &quot;Prof Narcolepsy?&quot;
+Prof (&quot;Snore!&quot;)
+Student &quot;Prof Narcolepsy!&quot; <strong>(2nd time we had to wake the prof)</strong>
+Prof &quot;Huh?  What?  Oops!  I must have fallen asleep!&quot;
+Prof &quot;Now as I was saying . . .&quot;
+Prof &quot;F = m*a is a special case of F = dp/dt = m*dv/dt + v*dm/dt when dm/dt = 0.
+&quot;
+(Student scribbles notes.)
+Prof &quot;There is a large Black hole at the center of our galaxy.&quot;
+(Student scribbles notes.)
+Prof &quot;F = m*a is a special case of F = dp/dt = m*dv/dt + v*dm/dt when dm/dt = 0.
+&quot;
+(Student scribbles notes.)
+Prof &quot;The electron-electron repulsion between atoms and molecules supports the s
+tructure of most matter at our scale. If gravity overcomes this electron repulsi
+on, then electrons collapse into the nucleus and matter becomes a neutron star.&quot;
+(Student scribbles notes.)
+(The Dean shuffles paper.)
+Prof (&quot;Snore!&quot;)
+Student &quot;Prof Narcolepsy?&quot;
+Prof (&quot;Snore!&quot;)
+Student &quot;Prof Narcolepsy?&quot;
+Prof (&quot;Snore!&quot;)
+Student &quot;I have had enough!  I'm calling the Dean.&quot;
+                         <strong>(3rd time, we give up of the prof and call the dean)</strong>
+Dean &quot;WAKE UP!&quot;
+Prof &quot;(Oops! The Dean caught me sleeping on the job!)&quot;
+Prof &quot;Now as I was saying . . .&quot;
+Prof &quot;The electron-electron repulsion between atoms and molecules supports the s
+tructure of most matter at our scale. If gravity overcomes this electron repulsi
+on, then electrons collapse into the nucleus and matter becomes a neutron star.&quot;
+(Student scribbles notes.)
+Prof &quot;There is a large Black hole at the center of our galaxy.&quot;
+(Student scribbles notes.)
+(The Dean shuffles paper.)
+Prof &quot;There is a large Black hole at the center of our galaxy.&quot;
+(Student scribbles notes.)
+Prof &quot;The electron-electron repulsion between atoms and molecules supports the s
+tructure of most matter at our scale. If gravity overcomes this electron repulsi
+on, then electrons collapse into the nucleus and matter becomes a neutron star.&quot;
+(Student scribbles notes.)
+Prof &quot;The electron-electron repulsion between atoms and molecules supports the s
+tructure of most matter at our scale. If gravity overcomes this electron repulsi
+on, then electrons collapse into the nucleus and matter becomes a neutron star.&quot;
+...
+Prof &quot;There is a large Black hole at the center of our galaxy.&quot;
+(Student scribbles notes.)
+Prof &quot;F = m*a is a special case of F = dp/dt = m*dv/dt + v*dm/dt when dm/dt = 0.
+&quot;
+(Student scribbles notes.)
+Dean &quot;Class is over!&quot;
+Prof &quot;Class dismissed!&quot;
+Student &quot;Time for lunch!&quot;
+(The Dean turns of the lights and locks the classroom.)
+     </pre>
+   </p>
+ </body>
+</html>
