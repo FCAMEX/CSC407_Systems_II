@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="en_US">
+  <head>
+    <meta http-equiv="content-type" content="text/html" charset="UTF-8"> 
+    <title>CSC 407: Computer Systems II: 2018 Fall, Assignment #1</title>
+    <style>
+      h2 { text-align: center; }
+    </style>
+  </head>
+
+  <body>
+    <h2>CSC 407: Computer Systems II: Fall II<br/>Assignment #1</h2>
+    <p>Last Modified 2018 September 18</p>
+
+    <h4>Purpose:</h4>
+    To go over:
+    <ul>
+      <li>Compiler optimizations</li>
+      <li>Program profiling (timing)</li>
+      <li>Header files</li>
+      <li>Linking and object file layout</li>
+    </ul>
+
+    <h3>Computing</h3>
+    <p>
+      Please <a href="http://www.putty.org/">ssh</a> into one of the following:
+      <ul>
+	<li>140.192.36.184</li>
+	<li>140.192.36.185</li>
+	<li>140.192.36.186</li>
+	<li>140.192.36.187</li>
+      </ul>
+      or use your own Linux machine.
+    </p>
+
+    <p>
+      Please submit a .zip file
+      (<em>not</em> .7z or any other non-standard compression!)
+      file of your header file <em>and</em>
+      a .txt/.pdf/.doc/.odt file containing your answer to the questions.
+    </p>
+
+    <ol type="1">
+      <li>
+	<h4>Please copy-and-paste the following files (0 Points):</h4>
+	<h5>wordCounter.c</h5>
+	<p>
+	  <pre>
+/*-------------------------------------------------------------------------*
+ *---									---*
+ *---		wordCounter.c						---*
+ *---									---*
+ *---	    This file defines a program that counts the words in a file	---*
+ *---	using 2 different data-structures.				---*
+ *---									---*
+ *---	----	----	----	----	----	----	----	----	---*
+ *---									---*
+ *---	Version 1.0		2018 September 9	Joseph Phillips	---*
+ *---									---*
+ *-------------------------------------------------------------------------*/
+
+#include	&quot;wordCounterHeader.h&quot;
+
+//  PURPOSE:  To hold the size of the buffer to read.
+int		textLen;
+
+
+//  PURPOSE:  To remove the &apos;\n&apos; character in the string pointed to by &apos;\n&apos;,
+//	if it exists.  No return value.
+void  		removeNewline	(char*		cPtr
+				)
+{
+  cPtr	= strchr(cPtr,&apos;\n&apos;);
+
+  if  (cPtr != NULL)
+    *cPtr = &apos;\0&apos;;
+}
+
+
+//  PURPOSE:  To return &apos;1&apos; if a word is found at address &apos;*positionHandle&apos;,
+//	and to place a lowercased version of the word into &apos;word&apos;, advance
+//	&apos;*positionHandle&apos; past the word, and return &apos;1&apos; if such a word exists.
+//	Returns &apos;0&apos; if no more words are found between the starting address of
+//	&apos;*positionHandle&apos; and the ending &apos;\n&apos; or &apos;\0&apos; character.
+int		didGetWord	(char**		positionHandle,
+				 char*		word
+				)
+{
+  while  ( (**positionHandle != &apos;\n&apos;)  &amp;&amp;
+	   (**positionHandle != &apos;\n&apos;)  &amp;&amp;
+	   !isalnum(**positionHandle)
+	 )
+    (*positionHandle)++;
+
+  if  ( (**positionHandle == &apos;\n&apos;) || (**positionHandle == &apos;\0&apos;) )
+    return(0);
+
+  do
+  {
+    *word	= tolower(**positionHandle);
+    word++;
+    (*positionHandle)++;
+  }
+  while  ( isalnum(**positionHandle) );
+
+  *word	= &apos;\0&apos;;
+
+  return(1);
+}
+
+
+
+int		main		(int		argc,
+				 char*		argv[]
+				)
+{
+  char	filename[SMALL_TEXT_LEN];
+  FILE*	filePtr;
+  int	choice;
+  int	length	= 1024;
+
+  textLen	= 4 * length;
+
+  printf(&quot;File name to read: &quot;);
+  fgets(filename,SMALL_TEXT_LEN,stdin);
+  removeNewline(filename);
+
+  filePtr	= fopen(filename,&quot;r&quot;);
+
+  if  (filePtr == NULL)
+  {
+    fprintf(stderr,&quot;Could not open %s\n&quot;,filename);
+    exit(EXIT_FAILURE);
+  }
+
+  do
+  {
+    char	choiceText[SMALL_TEXT_LEN];
+
+    printf
+	(&quot;Which algorithm would you like to run:\n&quot;
+	 &quot;(1) Count words with tree\n&quot;
+	 &quot;(2) Count words with linked-list\n&quot;
+	 &quot;\n&quot;
+	 &quot;Your choice? &quot;
+	);
+    fgets(choiceText,SMALL_TEXT_LEN,stdin);
+    choice = atoi(choiceText);
+  }
+  while  ( (choice &lt; 1)  ||  (choice &gt; 2) );
+
+  printf(&quot;\n\n&quot;);
+
+  switch  (choice)
+  {
+  case 1 :
+    {
+      struct TreeNode*	rootPtr	= buildTree(filePtr);
+
+      printTree(rootPtr);
+      freeTree (rootPtr);
+    }
+    break;
+
+  case 2 :
+    {
+      struct ListNode*	firstPtr= buildList(filePtr);
+
+      printList(firstPtr);
+      freeList (firstPtr);
+    }
+
+    break;
+  }
+
+  fclose(filePtr);
+  return(EXIT_SUCCESS);
+}
+	  </pre>
+	</p>
+	<h5>tree.c</h5>
+	<p>
+	  <pre>
+/*-------------------------------------------------------------------------*
+ *---									---*
+ *---		tree.c							---*
+ *---									---*
+ *---	    This file defines functions that build, print and free a	---*
+ *---	tree of struct TreeNode instances for the  wordCounter program.	---*
+ *---									---*
+ *---	----	----	----	----	----	----	----	----	---*
+ *---									---*
+ *---	Version 1.0		2018 September 9	Joseph Phillips	---*
+ *---									---*
+ *-------------------------------------------------------------------------*/
+
+#include	&quot;wordCounterHeader.h&quot;
+
+
+//  PURPOSE:  To build and return a tree of struct TreeNode instances telling
+//	the counts of the words found in file &apos;*filePtr&apos;.
+struct TreeNode*
+		buildTree	(FILE*		filePtr
+				)
+{
+  struct TreeNode*	rootPtr	= NULL;
+  struct TreeNode*	listPrev;
+  struct TreeNode*	listRun;
+  struct TreeNode*	newPtr;
+  int			compResult;
+  char*			line	= (char*)malloc(textLen);
+  char			word[SMALL_TEXT_LEN];
+
+  while  ( fgets(line,textLen,filePtr) != NULL )
+  {
+    char*	lineRun	= line;
+
+    while  ( didGetWord(&amp;lineRun,word) )
+    {
+      listPrev	= NULL;
+
+      for  (listRun = rootPtr;  listRun != NULL;  )
+      {
+
+	if  ( (compResult = strcmp(listRun-&gt;wordCPtr_,word)) == 0)
+	  break;
+
+	listPrev = listRun;
+
+	if  (compResult &gt; 0)
+	  listRun = listRun-&gt;leftPtr_;
+	else
+	  listRun = listRun-&gt;rightPtr_;
+
+      }
+
+      if  (listRun == NULL)
+      {
+	newPtr	= (struct TreeNode*)malloc(sizeof(struct TreeNode));
+
+	newPtr-&gt;wordCPtr_  = strdup(word);
+	newPtr-&gt;count_	   = 1;
+	newPtr-&gt;leftPtr_   = NULL;
+	newPtr-&gt;rightPtr_  = NULL;
+
+	if  (rootPtr == NULL)
+	  rootPtr = newPtr;
+	else
+	if  (compResult &gt; 0)
+	  listPrev-&gt;leftPtr_ = newPtr;
+	else
+	  listPrev-&gt;rightPtr_ = newPtr;
+
+      }
+      else
+	(listRun-&gt;count_)++;
+    }
+
+  }
+
+  free(line);
+  return(rootPtr);
+}
+
+
+//  PURPOSE:  To print the subtree rooted at &apos;*nodePtr&apos;.  No return value.
+void		printTree	(struct TreeNode*	nodePtr
+				)
+{
+  if  (nodePtr == NULL)
+    return;
+
+  printTree(nodePtr-&gt;leftPtr_);
+  printf(&quot;%s\t%d\n&quot;,nodePtr-&gt;wordCPtr_,nodePtr-&gt;count_);
+  printTree(nodePtr-&gt;rightPtr_);
+}
+
+
+//  PURPOSE:  To free the subtree rooted at &apos;*nodePtr&apos;.  No return value.
+void		freeTree	(struct TreeNode*	nodePtr
+				)
+{
+  if  (nodePtr == NULL)
+    return;
+
+  freeTree(nodePtr-&gt;leftPtr_);
+  freeTree(nodePtr-&gt;rightPtr_);
+  free(nodePtr-&gt;wordCPtr_);
+  free(nodePtr);
+}
+	  </pre>
+	</p>
+	<h5>list.c</h5>
+	<p>
+	  <pre>
+/*-------------------------------------------------------------------------*
+ *---									---*
+ *---		list.c							---*
+ *---									---*
+ *---	    This file defines functions that build, print and free a	---*
+ *---	list of struct ListNode instances for the  wordCounter program.	---*
+ *---									---*
+ *---	----	----	----	----	----	----	----	----	---*
+ *---									---*
+ *---	Version 1.0		2018 September 9	Joseph Phillips	---*
+ *---									---*
+ *-------------------------------------------------------------------------*/
+
+#include	&quot;wordCounterHeader.h&quot;
+
+
+//  PURPOSE:  To build and return a list of struct ListNode instances telling
+//	the counts of the words found in file &apos;*filePtr&apos;.
+struct ListNode*
+		buildList	(FILE*		filePtr
+				)
+{
+  struct ListNode*	firstPtr	= NULL;
+  struct ListNode*	lastPtr		= NULL;
+  struct ListNode*	listRun;
+  struct ListNode*	newPtr;
+  char*			line		= (char*)malloc(textLen);
+  char			word[SMALL_TEXT_LEN];
+
+  while  ( fgets(line,textLen,filePtr) != NULL )
+  {
+    char*	lineRun	= line;
+
+    while  ( didGetWord(&amp;lineRun,word) )
+    {
+
+      for  (listRun = firstPtr;  listRun != NULL;  listRun = listRun-&gt;nextPtr_)
+	if  (strcmp(listRun-&gt;wordCPtr_,word) == 0)
+	  break;
+
+      if  (listRun == NULL)
+      {
+	newPtr   = (struct ListNode*)malloc(sizeof(struct ListNode));
+
+	newPtr-&gt;wordCPtr_  = strdup(word);
+	newPtr-&gt;count_	   = 1;
+	newPtr-&gt;nextPtr_   = NULL;
+
+	if  (firstPtr == NULL)
+	  firstPtr = newPtr;
+	else
+	  lastPtr-&gt;nextPtr_ = newPtr;
+
+	lastPtr	= newPtr;
+      }
+      else
+	(listRun-&gt;count_)++; 
+
+    }
+
+  }
+
+  free(line);
+  return(firstPtr);
+}
+
+
+//  PURPOSE:  To print the list pointed to by &apos;*firstPtr&apos;.  No return value.
+void		printList	(struct ListNode*	firstPtr
+				)
+{
+  struct ListNode*	listRun;
+
+  for  (listRun = firstPtr;  listRun != NULL;  listRun = listRun-&gt;nextPtr_)
+    printf(&quot;%s\t%d\n&quot;,listRun-&gt;wordCPtr_,listRun-&gt;count_);
+
+}
+
+
+//  PURPOSE:  To free the list pointed to by &apos;*firstPtr&apos;.  No return value.
+void		freeList	(struct ListNode*	firstPtr
+				)
+{
+  struct ListNode*	listRun;
+  struct ListNode*	nextPtr;
+
+  for  (listRun = firstPtr;  listRun != NULL;  listRun = nextPtr)
+  {
+    nextPtr	= listRun-&gt;nextPtr_;
+
+    free(listRun-&gt;wordCPtr_);
+    free(listRun);
+  }
+
+}
+	  </pre>
+	</p>
+
+      </li>
+      <p/>
+
+      <li>
+	<h4>Header files (10 Points):</h4>
+	<p>
+	  Hey!  Ain&apos;t something missing!?!<br/>
+	  Yeah, that is right.
+	  There is no <code>wordCounterHeader.h</code>.
+	</p>
+	<p>
+	  <em>Please write one so that you can compile the program!</em>
+	  Please be sure to <em>declare</em> only what is needed in common.
+	</p>
+	<p>
+	  Please add to this <em>incomplete</em> one:
+	</p>
+	<pre>
+/*-------------------------------------------------------------------------*
+ *---									---*
+ *---		wordCounterHeader.h					---*
+ *---									---*
+ *---	    This file includes common header files and declares structs	---*
+ *---	needed by .c files of the wordCounter program.			---*
+ *---									---*
+ *---	----	----	----	----	----	----	----	----	---*
+ *---									---*
+ *---	Version 1.0		2018 September 9	Joseph Phillips	---*
+ *---									---*
+ *-------------------------------------------------------------------------*/
+
+//---			    Common inclusions:			---//
+#include	&lt;stdlib.h&gt;
+#include	&lt;stdio.h&gt;
+#include	&lt;string.h&gt;
+
+
+//---			    Common constants:			---//
+#define		SMALL_TEXT_LEN	256
+
+
+//---			      Common types:			---//
+struct		TreeNode
+{
+  char*			wordCPtr_;
+  int			count_;
+  struct TreeNode*	leftPtr_;
+  struct TreeNode*	rightPtr_;
+};
+
+
+struct		ListNode
+{
+  char*			wordCPtr_;
+  int			count_;
+  struct ListNode*	nextPtr_;
+};
+
+
+//---		    Declarations of global functions:			---//
+<strong>//  YOUR CODE HERE!</strong>
+	</pre>
+      </li>
+      <p/>
+
+      <li>
+	<h4>Timing: Part 1 (20 Points):</h4>
+	Compile and run the program without any extra optimizations,
+	but with <em>profiling</em> for timing:
+	<pre>
+gcc -c -pg -O0 wordCounter.c
+gcc -c -pg -O0 tree.c
+gcc -c -pg -O0 list.c
+gcc wordCounter.o tree.o list.o -pg -O0 -o wordCounterO0</pre>
+	<em>Run the program twice</em>
+	timing it both times, and answer the following:
+
+	<ol type="a">
+	  <li>
+	    <pre>
+$ <strong>./wordCounterO0</strong>
+File name to read: <strong>originOfSpecies.txt</strong>
+Which algorithm would you like to run:
+(1) Count words with tree
+(2) Count words with linked-list
+
+Your choice? <strong>1</strong></pre>
+	    <table border="1">
+	      <tr>
+		<td>buildTree() self seconds</td>
+		<td><strong>_____________</strong></td>
+	      </tr>
+	    </table>
+	  </li>
+	  <p/>
+
+	  <li>
+	    <pre>
+$ <strong>./wordCounterO0 </strong>
+File name to read: <strong>originOfSpecies.txt</strong>
+Which algorithm would you like to run:
+(1) Count words with tree
+(2) Count words with linked-list
+
+Your choice? <strong>2</strong></pre>
+	    <table border="1">
+	      <tr>
+		<td>buildList() self seconds</td>
+		<td><strong>_____________</strong></td>
+	      </tr>
+	    </table>
+	  </li>
+	</ol>
+
+      </li>
+      <p/>
+
+      <li>
+	<h4>Timing: Part 2 (20 Points):</h4>
+	Compile and run the program <em>with</em> optimization,
+	but with <em>profiling</em> for timing:
+
+	<pre>
+gcc -c -pg -O2 wordCounter.c
+gcc -c -pg -O2 tree.c
+gcc -c -pg -O2 list.c
+gcc wordCounter.o tree.o list.o -pg -O2 -o wordCounterO2</pre>
+	<em>Run the program twice</em>
+	timing it both times, and answer the following:
+
+	<ol type="a">
+	  <li>
+	    <pre>
+$ <strong>./wordCounterO2</strong>
+File name to read: <strong>originOfSpecies.txt</strong>
+Which algorithm would you like to run:
+(1) Count words with tree
+(2) Count words with linked-list
+
+Your choice? <strong>1</strong></pre>
+	    <table border="1">
+	      <tr>
+		<td>buildTree() self seconds</td>
+		<td><strong>_____________</strong></td>
+	      </tr>
+	    </table>
+	  </li>
+	  <p/>
+
+	  <li>
+	    <pre>
+$ <strong>./wordCounterO2 </strong>
+File name to read: <strong>originOfSpecies.txt</strong>
+Which algorithm would you like to run:
+(1) Count words with tree
+(2) Count words with linked-list
+
+Your choice? <strong>2</strong></pre>
+	    <table border="1">
+	      <tr>
+		<td>buildList() self seconds</td>
+		<td><strong>_____________</strong></td>
+	      </tr>
+	    </table>
+	  </li>
+	</ol>
+      </li>
+      <p/>
+
+      <li>
+	<h4>Parts of an executable (Points 20):</h4>
+	Please find the following inside of <code>wordCounterO0</code>
+	by using <code>objdump</code> to show it
+	(if it exists in the executable)
+	or by using <code>objdump</code> to disassemble
+	the code and showing where the code manipulates
+	the heap or stack.
+	<p>
+	  Show a <em>disassembly</em> or <em>objdump</em>.
+	  You do not have to show <em>all</em> of the objdump result
+	  if it is too long, but
+	  (1) please show the relevant output, and
+	  (2) please show the <code>objdump</code> command
+	  that you used to generate it.
+	</p>
+	</p>
+	<ol type="a">
+	  <li>The string <code>&quot;File name to read: &quot;</code> in <code>main()</code></li>
+	  <li>The local variable <code>rootPtr</code> in <code>buildTree()</code></li>
+	  <li>The code for <code>printList()</code></li>
+	  <li>The global variable <code>textLen</code></li>
+	</ol>
+	<table border="1">
+	  <tr><th>Question</th> <th align="center">Command</th> <th align="center">Result</th></tr>
+	  <tr>
+	    <td>(A)</td>
+	    <td valign="bottom">______________________</td>
+	    <td valign="bottom">
+	      <pre>
+
+
+
+
+
+
+________________________________ </pre>
+	    </td>
+	  </tr>
+	  <tr>
+	    <td>(B)</td>
+	    <td valign="bottom">______________________</td>
+	    <td valign="bottom">
+	      <pre>
+
+
+
+
+
+
+________________________________ </pre>
+	    </td>
+	  </tr>
+	  <tr>
+	    <td>(C)</td>
+	    <td valign="bottom">______________________</td>
+	    <td valign="bottom">
+	      <pre>
+
+
+
+
+
+
+________________________________ </pre>
+	    </td>
+	  </tr>
+	  <tr>
+	    <td>(D)</td>
+	    <td valign="bottom">______________________</td>
+	    <td valign="bottom">
+	      <pre>
+
+
+
+
+
+
+________________________________ </pre>
+	    </td>
+	  </tr>
+	</table>
+      </li>
+      <p/>
+
+      <li>
+	<h4>Compiler optimizations (Points 30):</h4>
+	Find and show at least 2 examples (total) of the following optimizations
+	in either <code>wordCounterO0</code> or <code>wordCounterO2</code>.
+	<ol type="A">
+	  <li>usage of registers to hold vars (as opposed to the stack)</li>
+	  <li>code motion</li>
+	  <li>reduction in strength</li>
+	</ol>
+
+	For both:
+	<ul>
+	  <li>Tell if it exists in either <code>wordCounterO0</code>, <code>wordCounterO2</code>, or <em>both</em>, and</li>
+	  <li>Show these optimizations in the <em>disassembly</em> of the function that has it</li>
+	</ul>
+
+      </li>
+
+    </ol>
+  </body>
+</html>
