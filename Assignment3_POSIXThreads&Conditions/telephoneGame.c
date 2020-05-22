@@ -1,11 +1,29 @@
 /*--------------------------------------------------------------------------*
+ *----																	----*
+ *----		telephoneGame												----*
+ *----																	----*
  *----	    This program simulates the children's game of "telephone",	----*
+ *----	where an original message mutates as it is imperfectly 			----*
+ *----	transmited among children in a pairwise manner.					----*
+ *----																	----*
+ *----	    It demonstrates Linux/Unix thread programming using			----*
+ *----	pthread_mutex_t and pthread_cond_t.								----*
+ *----																	----*
+ *----	Compile with:													----*
+ *----		linux> g++ -lpthread telephoneGame.cpp -o telephoneGame		----*
+ *----																	----*
  *----	----	----	----	----	----	----	----	----	----*
+ *----																	----*
+ *----	Version 1.0		Fernando Araujo									----*
+ *----																	----*
  *--------------------------------------------------------------------------*/
 
 
 
 /*--------------------------------------------------------------------------*
+ *----																	----*
+ *----			Includes and namespace designations:					----*
+ *----																	----*
  *--------------------------------------------------------------------------*/
 
 #include <cstdlib>
@@ -18,6 +36,9 @@ using	 namespace	std;
 
 
 /*--------------------------------------------------------------------------*
+ *----																	----*
+ *----			    Definitions of constants:							----*
+ *----																	----*
  *--------------------------------------------------------------------------*/
 
 /*  PURPOSE:  To tell the number of children among whom to pass the message.
@@ -55,6 +76,9 @@ const string 	words[NUM_WORDS_IN_SENTENCE][NUM_CHOICES_PER_POSITION]
 
 
 /*--------------------------------------------------------------------------*
+ *----																	----*
+ *----	    Definitions of classes and their methods and functions:		----*
+ *----																	----*
  *--------------------------------------------------------------------------*/
 
 /*  PURPOSE:  To represent the current state of a Sentence.
@@ -225,6 +249,9 @@ public :
 
 
 /*--------------------------------------------------------------------------*
+ *----																	----*
+ *----			Definitions of global variables:						----*
+ *----																	----*
  *--------------------------------------------------------------------------*/
 
 /*  PURPOSE:  To hold the global messaging system.
@@ -234,6 +261,9 @@ MessageSystem	messageSystem;
 
 
 /*--------------------------------------------------------------------------*
+ *----																	----*
+ *----			Definitions of global functions:						----*
+ *----																	----*
  *--------------------------------------------------------------------------*/
 
 /*  PURPOSE:  To get the necessary locks, get the sentence, print it,
